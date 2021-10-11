@@ -7,8 +7,8 @@
 //  esptool.py --chip esp32 --port /dev/cu.wchusbserial53100038751 erase_flash
 // esptool.py --chip esp32 --port /dev/cu.wchusbserial53100038751 --baud 460800 write_flash -z 0x1000 esp32-20190125-v1.10.bin
 // screen /dev/cu.wchusbserial53100038751 -b115200
-const uint8_t kMatrixWidth  = 32;
-const uint8_t kMatrixHeight = 8;
+const int kMatrixWidth  = 32;
+const int kMatrixHeight = 8;
 const bool    kMatrixSerpentineLayout = true;
 
 const bool    kMatrixVertical = true;
@@ -122,15 +122,14 @@ void PrintVector(double *vData, uint16_t bufferSize )
      float total = 0;
      for( int j=0;j<stepV;j++){
         total+=vData[i*kMatrixWidth+j];
+        Serial.print(vData[i*kMatrixWidth+j]);
+        Serial.print('&');
      }
     
      float avg = total/stepV;
      Serial.print(avg);
      Serial.print(',');
-     Serial.print(total);
-     Serial.print('|');
-     Serial.print(stepV);
-     Serial.print('&');
+   
 //     if(avg>maxValues[i]){
 //       maxValues[i] = avg*1.2;
 //     }
