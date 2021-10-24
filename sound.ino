@@ -1,63 +1,112 @@
-#include <FastLED.h>
+
+#include "base.h"
+#include "led.h"
+#include "clock.h"
+#include <WiFi.h>
+
 #include "driver/i2s.h"
-#define LED_PIN 23
-#define BRIGHTNESS 25
-#define LED_TYPE WS2812B
-#define COLOR_ORDER GRB
-//  esptool.py --chip esp32 --port /dev/cu.wchusbserial53100038751 erase_flash
-// esptool.py --chip esp32 --port /dev/cu.wchusbserial53100038751 --baud 460800 write_flash -z 0x1000 esp32-20190125-v1.10.bin
-// screen /dev/cu.wchusbserial53100038751 -b115200
-const int kMatrixWidth = 32;
-const int kMatrixHeight = 8;
-const bool kMatrixSerpentineLayout = true;
 
-const bool kMatrixVertical = true;
 
-#define NUM_LEDS (kMatrixWidth * kMatrixHeight)
-#define MAX_DIMENSION ((kMatrixWidth > kMatrixHeight) ? kMatrixWidth : kMatrixHeight)
 
-// The leds
-CRGB leds[kMatrixWidth * kMatrixHeight];
+
+
+
 
 #include "arduinoFFT.h"
-float startIndexs[kMatrixWidth];
-float maxValues[kMatrixWidth];
+
 arduinoFFT FFT = arduinoFFT(); /* Create FFT object */
 /*
-These values can be changed in order to evaluate the functions
+  These values can be changed in order to evaluate the functions
 */
 #define CHANNEL A0
-const uint16_t BLOCK_SIZE = 1024;       //This value MUST ALWAYS be a power of 2
+const i2s_port_t I2S_PORT = I2S_NUM_0;
+const uint16_t BLOCK_SIZE = 512; //This value MUST ALWAYS be a power of 2
+const uint16_t BUFFER_SIZE = 8;
 const double samplingFrequency = 44100; //Hz, must be less than 10000 due to ADC
 
 double vReal[BLOCK_SIZE];
 double vImag[BLOCK_SIZE];
 int32_t samples[BLOCK_SIZE];
 
-i2s_config_t i2s_config = {
-  mode : (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-  sample_rate : samplingFrequency,
-  bits_per_sample : I2S_BITS_PER_SAMPLE_32BIT,
-  channel_format : I2S_CHANNEL_FMT_ONLY_LEFT,
-  communication_format : (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_LSB),
-  intr_alloc_flags : ESP_INTR_FLAG_LEVEL1,
-  dma_buf_count : 8,
-  dma_buf_len : BLOCK_SIZE
-};
+const char* ssid       = "十一";
+const char* password   = "keaide_11";
 
-i2s_pin_config_t pin_config = {
-    .bck_io_num = 32,                  //this is BCK pin
-    .ws_io_num = 25,                   // this is LRCK pin
-    .data_out_num = I2S_PIN_NO_CHANGE, // this is DATA output pin
-    .data_in_num = 33                  //DATA IN
-};
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 3600 * 8;
+const int   daylightOffset_sec = 0;
+
+void printLocalTime()
+{
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    return;
+  }
+   
+  display(timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+}
+
+void setupMic()
+{
+  Serial.println("Configuring I2S...");
+  esp_err_t err;
+
+  // The I2S config as per the example
+  const i2s_config_t i2s_config = {
+      .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX), // Receive, not transfer
+      .sample_rate = 16000,                              // 16KHz
+      .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,      // could only get it to work with 32bits
+      .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,      // although the SEL config should be left, it seems to transmit on right
+      .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+      .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, // Interrupt level 1
+      .dma_buf_count = 8,                       // number of buffers
+      .dma_buf_len = BLOCK_SIZE                 // samples per buffer
+  };
+
+  // The pin config as per the setup
+  const i2s_pin_config_t pin_config = {
+      .bck_io_num = 14,   // BCKL
+      .ws_io_num = 15,    // LRCL
+      .data_out_num = -1, // not used (only for speakers)
+      .data_in_num = 32   // DOUT
+  };
+
+  // Configuring the I2S driver and pins.
+  // This function must be called before any I2S driver read/write operations.
+  err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+  if (err != ESP_OK)
+  {
+    Serial.printf("Failed installing driver: %d\n", err);
+    while (true)
+      ;
+  }
+  err = i2s_set_pin(I2S_PORT, &pin_config);
+  if (err != ESP_OK)
+  {
+    Serial.printf("Failed setting pin: %d\n", err);
+    while (true)
+      ;
+  }
+  Serial.println("I2S driver installed.");
+}
 const int i2s_num = 0;
 int retStat = 0;
 int32_t sampleIn = 0;
 
 void setup()
 {
-  delay(3000);
+  //connect to WiFi
+  Serial.printf("Connecting to %s ", ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(" CONNECTED");
+
+  //init and get the time
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  
   LEDS.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
   LEDS.setBrightness(BRIGHTNESS);
   Serial.begin(115200);
@@ -66,115 +115,135 @@ void setup()
     startIndexs[i] = 7;
   for (uint8_t i = 0; i < sizeof(maxValues); ++i)
     maxValues[i] = 0;
+  pinMode(LED_PIN, OUTPUT);
 
-  //Set up pin 19 for data IN from the Mic to the esp32
-  pinMode(33, INPUT);
-  //Set up pin 21 and 25 as the BCK and LRCK pins
-  pinMode(25, OUTPUT);
-  pinMode(32, OUTPUT);
-  //Init the i2s device
-  i2s_driver_install((i2s_port_t)i2s_num, &i2s_config, 0, NULL);
-  i2s_set_pin((i2s_port_t)i2s_num, &pin_config);
-  i2s_start((i2s_port_t)i2s_num);
+  setupMic();
   //This pulls in a bunch of samples and does nothing, its just used to settle the mics output
-  for (retStat = 0; retStat < BLOCK_SIZE * 2; retStat++)
-  {
-    i2s_pop_sample((i2s_port_t)i2s_num, (char *)&sampleIn, portMAX_DELAY);
-    delay(1);
-  }
+  // for (retStat = 0; retStat < BLOCK_SIZE * 2; retStat++)
+  // {
+  //   i2s_pop_sample((i2s_port_t)i2s_num, (char *)&sampleIn, portMAX_DELAY);
+  //   delay(1);
+  // }
+  delay(1000);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
 }
 
 void loop()
 {
 
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
-
-  sampleIn = 0;
+  int num_bytes_read = i2s_read_bytes(I2S_PORT,
+                                      (char *)samples,
+                                      BLOCK_SIZE,     // the doc says bytes, but its elements.
+                                      portMAX_DELAY); // no timeout
+  int samples_read = num_bytes_read / 8;
   for (uint16_t i = 0; i < BLOCK_SIZE; i++)
   {
-    //this reads 32bits as 4 chars into a 32bit INT variable
-    i2s_pop_sample((i2s_port_t)i2s_num, (char *)&sampleIn, portMAX_DELAY);
-    //this pushes out all the unwanted bits as we only need right channel data.
-    sampleIn >>= 14;
-    vReal[i] = sampleIn;
+    vReal[i] = samples[i] >> 14;
     vImag[i] = 0.0; //Imaginary part must be zeroed in case of looping to avoid wrong calculations and overflows
   }
+  //  for(int i=0;i<BLOCK_SIZE/8;i++){
+  //    Serial.println(vReal[i]);
+  //  }
+
   FFT.Windowing(vReal, BLOCK_SIZE, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
   FFT.Compute(vReal, vImag, BLOCK_SIZE, FFT_FORWARD);
   FFT.ComplexToMagnitude(vReal, vImag, BLOCK_SIZE);
 
-  PrintVector(vReal, BLOCK_SIZE / 2);
-
+  
+  displaySound(vReal);
+  if(displayMode == 2){
+    printLocalTime();
+  }
   LEDS.show();
 
-  delay(10);
+  delay(5);
 }
-
-void PrintVector(double *vData, uint16_t bufferSize)
+double avgs[kMatrixWidth];
+double maxV = 500;
+double allMaxV = 0;
+uint16_t validSize = (BLOCK_SIZE / 2); //有效长度减去2，去掉最头上的两个值
+int startIndex = 50;
+const uint16_t stepV = validSize / kMatrixWidth; // 跳步，最后会余下 validSize%ledLen，没什么用直接丢掉了
+uint16_t stayLowTime = 0;
+uint16_t stayHighTime = 0;
+void displaySound(double *vData)
 {
-  int index = 0;
-  int maxV = 10000;
-  int validSize = bufferSize - 2; //有效长度减去2，去掉最头上的两个值
-  int ledLen = kMatrixWidth / 2;
-  const uint8_t stepV = (validSize / ledLen); // 跳步，最后会余下 validSize%ledLen，没什么用直接丢掉了
-  float avgs[ledLen];
-  for (int i = 0; i < ledLen; i++)
+  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  uint16_t i = 0;
+  uint16_t j = 0;
+  uint16_t firstLight;
+  allMaxV = 0;
+  for (i = 0; i < kMatrixWidth; i++)
   {
     //采样数64，取8个值，每个值都是8个值平均值。
-    float maxValue = 0;
-    for (int j = 0; j < stepV; j++)
+    double maxValue = 0;
+
+    for (j = 0; j < stepV; j++)
     {
-      maxValue = max(maxValue, vData[i * ledLen + j]);
+      //      maxValue += vData[i * kMatrixWidth + j];
+      double v = vData[i * stepV + j + startIndex];
+      maxValue = max(maxValue, v);
     }
+    allMaxV = max(allMaxV,maxValue);
     avgs[i] = maxValue;
+    //    Serial.print(i);
+    //    Serial.print(":");
+    //        Serial.println(maxValue);
+    //    Serial.print(":");
+    //    Serial.print(index);
+    //    Serial.print(":");
+    //    Serial.println(vData[index]);
   }
-  for (int i = 0; i < ledLen; i++)
+  for (i = 0; i < kMatrixWidth; i++)
   {
-    int firstLight = kMatrixHeight - 1;
-    for (int t = 0; t < kMatrixHeight; t++)
+    firstLight = kMatrixHeight - 1;
+    for (j = 0; j < kMatrixHeight; j++)
     {
-      if (avg[i] / maxV > (float(kMatrixHeight - t) / (float(kMatrixHeight))))
+      if (avgs[i] / maxV > (float(kMatrixHeight - j) / (float(kMatrixHeight))))
       {
-        firstLight = t;
+        firstLight = j;
         break;
       }
     }
-    for (int n = firstLight + 1; n < kMatrixHeight; n++)
-    {
-      leds[XY(i * 2, n)] = CRGB::Green;
-      leds[XY(i * 2 + 1, n)] = CRGB::Green;
-    }
-    float lastIndex = startIndexs[i];
-    if (lastIndex >= firstLight)
+
+    if (startIndexs[i] >= firstLight)
     {
       startIndexs[i] = firstLight;
     }
     else
     {
-      startIndexs[i] = lastIndex + 0.5;
+      startIndexs[i] = startIndexs[i] + 0.5;
     }
-    leds[XY(i * 2, floor(startIndexs[i]))] = CRGB::Gold;
-    leds[XY(i * 2, kMatrixHeight - 1)] = CRGB::Blue;
-    leds[XY(i * 2 + 1, floor(startIndexs[i]))] = CRGB::Gold;
-    leds[XY(i * 2 + 1, kMatrixHeight - 1)] = CRGB::Blue;
+    if (startIndexs[i] > 7)
+    {
+      // 金色不会小时
+      startIndexs[i] = 7;
+    }
+    for (j = startIndexs[i]; j < kMatrixHeight; j++)
+    {
+      leds[XY(i, j)].setColorCode(LED_COLORS[i]);
+    }
+    //    leds[XY(i, floor(startIndexs[i]))] = CRGB::Gold;
+    //    leds[XY(i , kMatrixHeight - 1)] = CRGB::Blue;
   }
-
-  Serial.println();
+  
   return;
 }
 
-uint16_t XY(uint8_t x, uint8_t y)
-{
-  // 每个 x 的起点 index
-  int xStart = ((x + 1) / 2) * 16 + (x + 1) % 2;
-  int realIndex = 0;
-  if ((x + 1) % 2 == 0)
-  {
-    realIndex = xStart - y;
+void checkMode (){
+  if(allMaxV<100){
+    stayLowTime+=1;
+    stayHighTime=0;
+  }else{
+    stayHighTime+=1;
+    stayLowTime = 0;
   }
-  else
-  {
-    realIndex = xStart + y;
+  if(stayLowTime>displayModeDelay){
+    displayMode = 2;
   }
-  return realIndex - 1;
+  if(stayHighTime >displayModeDelay){
+    displayMode = 1;
+  }
+  
 }
