@@ -1,15 +1,19 @@
-
-#include "base.h"
+#include "driver/i2s.h"
+#include <WiFi.h>
+#include "base.c"
 #include "led.h"
 #include "clock.h"
-#include <WiFi.h>
-
-#include "driver/i2s.h"
 
 
 
 
 
+
+
+float startIndexs[kMatrixWidth]  ;
+float maxValues[kMatrixWidth]  ;
+int displayMode = 1; // 显示模式，1 频谱，2 时钟
+int displayModeDelay = 30;
 
 
 #include "arduinoFFT.h"
@@ -96,6 +100,7 @@ int32_t sampleIn = 0;
 void setup()
 {
   //connect to WiFi
+  Serial.begin(115200);
   Serial.printf("Connecting to %s ", ssid);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -107,23 +112,17 @@ void setup()
   //init and get the time
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   
-  LEDS.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  LEDS.setBrightness(BRIGHTNESS);
-  Serial.begin(115200);
+  initLed();
+  
 
   for (uint8_t i = 0; i < sizeof(startIndexs); ++i)
     startIndexs[i] = 7;
   for (uint8_t i = 0; i < sizeof(maxValues); ++i)
     maxValues[i] = 0;
-  pinMode(LED_PIN, OUTPUT);
+  
 
   setupMic();
-  //This pulls in a bunch of samples and does nothing, its just used to settle the mics output
-  // for (retStat = 0; retStat < BLOCK_SIZE * 2; retStat++)
-  // {
-  //   i2s_pop_sample((i2s_port_t)i2s_num, (char *)&sampleIn, portMAX_DELAY);
-  //   delay(1);
-  // }
+   
   delay(1000);
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
@@ -152,10 +151,10 @@ void loop()
 
   
   displaySound(vReal);
-  if(displayMode == 2){
-    printLocalTime();
-  }
-  LEDS.show();
+//  if(displayMode == 2){
+//    printLocalTime();
+//  }
+  ledShow();
 
   delay(5);
 }
@@ -169,7 +168,8 @@ uint16_t stayLowTime = 0;
 uint16_t stayHighTime = 0;
 void displaySound(double *vData)
 {
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
+   
+  setAllBlack();
   uint16_t i = 0;
   uint16_t j = 0;
   uint16_t firstLight;
@@ -222,7 +222,8 @@ void displaySound(double *vData)
     }
     for (j = startIndexs[i]; j < kMatrixHeight; j++)
     {
-      leds[XY(i, j)].setColorCode(LED_COLORS[i]);
+      setXYColorFlow(i,j,i);
+//      leds[XY(i, j)].setColorCode(LED_COLORS[i]);
     }
     //    leds[XY(i, floor(startIndexs[i]))] = CRGB::Gold;
     //    leds[XY(i , kMatrixHeight - 1)] = CRGB::Blue;
