@@ -1,5 +1,8 @@
 #ifndef _LED_CPP
 #define _LED_CPP
+#include "base.c";
+
+ 
 #include  <stdint.h>
 
 
@@ -7,8 +10,7 @@
 // The leds
 //extern CRGB leds[kMatrixWidth * kMatrixHeight];
 //extern uint32_t LED_COLORS[32];
-const uint8_t kMatrixWidth = 32;
-const uint8_t kMatrixHeight = 8;
+
 uint16_t XY(uint8_t x, uint8_t y);
 void initLed();
 void setAllBlack();

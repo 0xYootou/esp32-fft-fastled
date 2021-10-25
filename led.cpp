@@ -1,6 +1,7 @@
+int global;
 
 #include <FastLED.h>
-
+#include "base.c";
 #include "led.h";
 
 // 每一列的led色值
@@ -11,8 +12,8 @@
 
 #define NUM_LEDS (kMatrixWidth * kMatrixHeight)
 #define MAX_DIMENSION ((kMatrixWidth > kMatrixHeight) ? kMatrixWidth : kMatrixHeight)
- CRGB leds[NUM_LEDS];
- int LED_COLORS[32] = {
+ CRGB leds[256] = {};
+ uint32_t LED_COLORS[32] = {
     0x4AF7A2,
     0x57FDD8,
     0x5CEEF9,
@@ -51,8 +52,7 @@ void initLed() {
   LEDS.setBrightness(BRIGHTNESS);
   pinMode(LED_PIN, OUTPUT);
   Serial.println("led ready");
-  Serial.println(NUM_LEDS);
-  Serial.println(sizeof(leds),1);
+  Serial.println(sizeof(leds));
 }
 
 uint16_t XY(uint8_t x, uint8_t y)

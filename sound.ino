@@ -151,9 +151,9 @@ void loop()
 
   
   displaySound(vReal);
-//  if(displayMode == 2){
-//    printLocalTime();
-//  }
+  if(displayMode == 2){
+    printLocalTime();
+  }
   ledShow();
 
   delay(5);
