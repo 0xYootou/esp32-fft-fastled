@@ -1,7 +1,7 @@
 #include "driver/i2s.h"
 #include <WiFi.h>
 #include "base.c"
-
+#include <FastLED.h>
 /************** 增益调节+led显示 *************/
 #include <ShiftRegister74HC595.h>
 #define SDI 21
@@ -57,7 +57,7 @@ byte rotaryPinGa2 = 12;
 byte rotaryPinGb2 = 13;
 // 增益,增益指的是对频率最大采样值的增益，增益变大，频谱的参考值会变高
 float gain = 50;
-
+float BRIGHTNESS =  25;
 #include "RotateCounter.h"
 
 
@@ -83,6 +83,32 @@ void gainRotateInit(){
 }
 void gainInterruptHandler(){
   rc_gain.isrGx();
+}
+
+void brightnessCallback(int a, int b){
+  BRIGHTNESS -= a;
+  BRIGHTNESS += b;
+  showNumber2(BRIGHTNESS);
+  LEDS.setBrightness(BRIGHTNESS);
+}
+
+
+RotateCounter rc_brightness(rotaryPinGa2,rotaryPinGb2);
+void brightnessRotateInit(){
+  showNumber2(BRIGHTNESS);
+  
+  rc_gain.check(gainCallback);
+  attachInterrupt(
+    digitalPinToInterrupt(rc_brightness.rotaryPinGa),
+    brightnessInterruptHandler,
+    CHANGE);
+  attachInterrupt(
+    digitalPinToInterrupt(rc_brightness.rotaryPinGb),
+    brightnessInterruptHandler, 
+    CHANGE);
+}
+void brightnessInterruptHandler(){
+  rc_brightness.isrGx();
 }
 
 /***********  时间 **************/
@@ -236,13 +262,13 @@ void display(uint8_t hour, uint8_t minite, uint8_t second)
 }
 /***************************************/
 
-#include <FastLED.h>
+
 //#include "base.c";
 //#include "led.h";
 
 // 每一列的led色值
 #define LED_PIN 23
-#define BRIGHTNESS 25
+
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 
@@ -449,6 +475,7 @@ void setup()
   WiFi.mode(WIFI_OFF);
   
   gainRotateInit();
+  brightnessRotateInit();
 }
 
 
@@ -474,6 +501,7 @@ void loop()
   FFT.ComplexToMagnitude(vReal, vImag, BLOCK_SIZE);
 
   rc_gain.check(gainCallback);
+  rc_brightness.check(brightnessCallback);
   displaySound(vReal);
   checkMode();
   if (displayMode == 2) {
